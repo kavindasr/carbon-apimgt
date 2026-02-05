@@ -1023,6 +1023,7 @@ components:
           enum:
             - REST_API
             - ASYNC_API
+            - MCP
           example: REST_API
         documentationLink:
           type: string
@@ -1078,6 +1079,7 @@ components:
           enum:
             - REST_API
             - ASYNC_API
+            - MCP
           example: REST_API
         documentationLink:
           type: string
