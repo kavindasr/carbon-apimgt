@@ -392,6 +392,7 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
             case "ASYNC":
                 return ExtendedArtifactType.ASYNC_API;
             case "MCP":
+            case "MCP_SERVER":
                 return ExtendedArtifactType.MCP;
             default:
                 return null;
@@ -420,10 +421,13 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
                 }
 
                 API api = apiProvider.getAPIbyUUID(apiId, organization);
+                if (api == null) {
+                    throw new APIMGovernanceException(APIMGovExceptionCodes.ERROR_WHILE_GETTING_API_INFO, apiId);
+                }
                 api.setUuid(apiId);
                 apiIdentifier.setUuid(apiId);
                 File apiProject;
-                if (APIConstants.API_TYPE_MCP.equals(api.getType())) {
+                if (APIConstants.API_TYPE_MCP.equalsIgnoreCase(api.getType())) {
                     MCPServerDTO mcpServerDtoToReturn = APIMappingUtil.fromAPItoMCPServerDTO(api, true,
                             apiProvider);
                     apiProject = ExportUtils.exportAPI(
@@ -494,8 +498,8 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
         try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(apiProjectZip))) {
             ZipEntry entry;
             while ((entry = zipInputStream.getNextEntry()) != null) {
-                if (entry.getName().contains(APIMGovernanceConstants.API_FILE_NAME) || entry.getName()
-                        .contains(APIMGovernanceConstants.MCP_FILE_NAME)) {
+                if (entry.getName().contains(APIMGovernanceConstants.API_FILE_NAME) ||
+                        entry.getName().contains(APIMGovernanceConstants.MCP_FILE_NAME)) {
                     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
                     byte[] buffer = new byte[1024];
                     int length;
@@ -521,18 +525,31 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
      */
     private ExtendedArtifactType getExtendedArtifactTypeFromAPIMetadata(String apiMetadata)
             throws APIMGovernanceException {
+        if (StringUtils.isBlank(apiMetadata)) {
+            return null;
+        }
         ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
         JsonNode rootNode;
         try {
             rootNode = yamlMapper.readTree(apiMetadata);
-            String topLevelType = rootNode.path("type").asText();
-            if ("mcp_server".equals(topLevelType)) {
-                return ExtendedArtifactType.MCP;
+            if (rootNode == null || rootNode.isMissingNode()) {
+                return null;
             }
+            JsonNode topLevelTypeNode = rootNode.path("type");
+            if (!topLevelTypeNode.isMissingNode()) {
+                String topLevelType = topLevelTypeNode.asText();
+                if ("mcp_server".equalsIgnoreCase(topLevelType)) {
+                    return ExtendedArtifactType.MCP;
+                }
+            }
+
             JsonNode dataNode = rootNode.path("data"); // Get the 'data' node
-            if (dataNode != null && dataNode.has("type")) {
-                String type = dataNode.path("type").asText();
-                return getExtendedArtifactTypeFromAPIType(type);
+            if (!dataNode.isMissingNode()) {
+                JsonNode dataTypeNode = dataNode.path("type");
+                if (!dataTypeNode.isMissingNode()) {
+                    String type = dataTypeNode.asText();
+                    return getExtendedArtifactTypeFromAPIType(type);
+                }
             }
         } catch (JsonProcessingException e) {
             throw new APIMGovernanceException(APIMGovExceptionCodes.ERROR_WHILE_GETTING_API_TYPE_FROM_PROJECT, e);
