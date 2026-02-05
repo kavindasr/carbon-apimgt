@@ -1,4 +1,6 @@
 name: API Manager Build with Test
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
 
 on:
   push:
@@ -19,16 +21,26 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Run hostname
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: hostname
       - name: Fix host entry
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: sudo echo "127.0.0.1 $(hostname)" | sudo tee -a /etc/hosts
       - name: Show hosts
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: cat /etc/hosts
       - name: Checkout master
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/checkout@v4
         with:
           fetch-depth: '10'
       - name: Set up JDK 11
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/setup-java@v4
         with:
           java-version: 11
@@ -37,6 +49,8 @@ jobs:
         with:
           node-version: '14.x'
       - name: Cache Maven packages
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/cache@v4
         with:
           path: ~/.m2
@@ -44,9 +58,13 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: Build carbon-apimgt with Tests
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: mvn clean install --file pom.xml
 
       - name: Upload unit test coverage to Codecov
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: codecov/codecov-action@v3
         with:
           flags: unit_tests
@@ -67,16 +85,26 @@ jobs:
       fail-fast: false
     steps:
       - name: Run hostname
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: hostname
       - name: Fix host entry
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: sudo echo "127.0.0.1 $(hostname)" | sudo tee -a /etc/hosts
       - name: Show hosts
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: cat /etc/hosts
       - name: Checkout master
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/checkout@v4
         with:
           fetch-depth: '10'
       - name: Set up JDK 11
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/setup-java@v4
         with:
           java-version: 11
@@ -85,19 +113,29 @@ jobs:
         with:
           node-version: '14.x'
       - name: Cache maven packages
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/cache@v4
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2
           restore-keys: ${{ runner.os }}-m2
       - name: Build carbon-apimgt without tests, skip portal builds
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: mvn clean install --file pom.xml -Dmaven.test.skip=true -Dnpm.build.skip=true
       - name: Get carbon.apimgt.version
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: mvn help:evaluate -Dexpression=project.version -q -DforceStdout > ../CARBON_APIMGT_VERSION_FILE
       - name: Print carbon.apimgt.version
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: |
           echo $(cat ../CARBON_APIMGT_VERSION_FILE)
       - name: Checkout Product-APIM
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/checkout@v4
         with:
           repository: wso2/product-apim
@@ -105,26 +143,37 @@ jobs:
           fetch-depth: '10'
           path: product-apim
       - name: Build product-apim with tests
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: mvn clean install -Dcarbon.apimgt.version=$(cat ../CARBON_APIMGT_VERSION_FILE) -fae --file product-apim/all-in-one-apim/pom.xml -DskipBenchMarkTest=true -DskipRestartTests=true
-        env:
           PRODUCT_APIM_TEST_GROUPS: ${{ matrix.segment }}
       - name: Publish Test Report
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         if: always()
         uses: malinthaprasan/action-surefire-report@v1
         with:
           report_paths: 'product-apim/all-in-one-apim/modules/integration/tests-integration/tests-backend/target/surefire-reports/TEST-TestSuite.xml'
       - name: Prepare upload testng report
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         if: always()
         run: mv product-apim/all-in-one-apim/modules/integration/tests-integration/tests-backend/target/surefire-reports/TEST-TestSuite.xml TEST-TestSuite_${{ matrix.id }}.xml
       - name: Archive testng report
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: TEST-TestSuite_${{ matrix.id }}
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
           path: |
             TEST-TestSuite_${{ matrix.id }}.xml
           if-no-files-found: warn
       - name: Upload coverage to Codecov
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: codecov/codecov-action@v3
         with:
           flags: integration_tests
@@ -132,16 +181,26 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Run hostname
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: hostname
       - name: Fix host entry
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: sudo echo "127.0.0.1 $(hostname)" | sudo tee -a /etc/hosts
       - name: Show hosts
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: cat /etc/hosts
       - name: Checkout master
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/checkout@v4
         with:
           fetch-depth: '10'
       - name: Set up JDK 11
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/setup-java@v4
         with:
           java-version: 11
@@ -150,19 +209,29 @@ jobs:
         with:
           node-version: '14.x'
       - name: Cache maven packages
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/cache@v4
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2
           restore-keys: ${{ runner.os }}-m2
       - name: Build carbon-apimgt without tests, skip portal builds
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: mvn clean install --file pom.xml -Dmaven.test.skip=true -Dnpm.build.skip=true
       - name: Get carbon.apimgt.version
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: mvn help:evaluate -Dexpression=project.version -q -DforceStdout > ../CARBON_APIMGT_VERSION_FILE
       - name: Print carbon.apimgt.version
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: |
           echo $(cat ../CARBON_APIMGT_VERSION_FILE)
       - name: Checkout Product-APIM
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         uses: actions/checkout@v4
         with:
           repository: wso2/product-apim
@@ -170,4 +239,6 @@ jobs:
           fetch-depth: '10'
           path: product-apim
       - name: Build product-apim with tests
+env:
+  MAVEN_OPTS: -Xmx4G -XX:MaxMetaspaceSize=512m
         run: mvn clean install -Dcarbon.apimgt.version=$(cat ../CARBON_APIMGT_VERSION_FILE) -fae --file product-apim/all-in-one-apim/pom.xml -DskipIntegrationTests
