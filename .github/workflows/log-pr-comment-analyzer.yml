@@ -41,7 +41,6 @@ jobs:
   invoke-ai-log-agent:
     name: Invoke AI Log Agent
     needs: find-pr-details
-    if: github.repository == 'wso2/carbon-apimgt'
     uses: wso2/wso2-organization-templates/.github/workflows/log-pr-comment-analyzer.yml@main
     with:
       prUrl: ${{ needs.find-pr-details.outputs.url }}
