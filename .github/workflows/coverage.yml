@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build-carbon:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Run hostname
         run: hostname
@@ -24,7 +24,7 @@ jobs:
       - name: Set up JDK 11
         uses: actions/setup-java@v4
         with:
-          java-version: 11.0.16+8
+          java-version: 11
           distribution: 'temurin'
       - uses: actions/setup-node@v4
         with:
@@ -43,7 +43,7 @@ jobs:
           flags: unit_tests
 
   build-product:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         include:
@@ -66,7 +66,7 @@ jobs:
       - name: Set up JDK 11
         uses: actions/setup-java@v4
         with:
-          java-version: 11.0.16+8
+          java-version: 11
           distribution: 'temurin'
       - uses: actions/setup-node@v4
         with:

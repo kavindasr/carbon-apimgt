@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build-product:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Run hostname
         run: hostname
@@ -27,7 +27,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: 11
-          distribution: 'adopt'
+          distribution: 'temurin'
       - uses: actions/setup-node@v4
         with:
           node-version: '16'

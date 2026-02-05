@@ -427,7 +427,8 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
                 api.setUuid(apiId);
                 apiIdentifier.setUuid(apiId);
                 File apiProject;
-                if (APIConstants.API_TYPE_MCP.equalsIgnoreCase(api.getType())) {
+                if (APIConstants.API_TYPE_MCP.equalsIgnoreCase(api.getType()) ||
+                        "MCP_SERVER".equalsIgnoreCase(api.getType())) {
                     MCPServerDTO mcpServerDtoToReturn = APIMappingUtil.fromAPItoMCPServerDTO(api, true,
                             apiProvider);
                     apiProject = ExportUtils.exportAPI(
