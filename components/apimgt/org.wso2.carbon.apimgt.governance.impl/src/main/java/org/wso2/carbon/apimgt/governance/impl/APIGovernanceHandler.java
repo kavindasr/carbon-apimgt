@@ -609,7 +609,7 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
     public static String extractDocData(byte[] apiProjectZip) throws APIMGovernanceException {
         ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
 
-        String rootFolder = APIMGovernanceConstants.DOCS_FOLDER + File.separator;
+        String rootFolder = APIMGovernanceConstants.DOCS_FOLDER + "/";
         String docMetadataFile = APIMGovernanceConstants.DOC_META_DATA_FILE_NAME;
         List<Object> docsList = new ArrayList<>();
         int count = 0;
