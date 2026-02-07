@@ -870,21 +870,8 @@ public class McpServersApiServiceImpl implements McpServersApiService {
                             StringUtils.EMPTY, StringUtils.EMPTY, dtoWrapper);
 
             String organization = RestApiUtil.getValidatedOrganization(messageContext);
-
-            Map<String, String> complianceResult = PublisherCommonUtils.checkGovernanceComplianceSync(null,
-                    APIMGovernableState.API_CREATE, ArtifactType.API, organization, null, null);
-            if (!complianceResult.isEmpty()
-                    && complianceResult.get(APIConstants.GOVERNANCE_COMPLIANCE_KEY) != null
-                    && !Boolean.parseBoolean(complianceResult.get(APIConstants.GOVERNANCE_COMPLIANCE_KEY))) {
-                throw new APIComplianceException(complianceResult.get(APIConstants.GOVERNANCE_COMPLIANCE_ERROR_MESSAGE));
-            }
-
             MCPServerDTO createdApiDTO = RestApiPublisherUtils.importDefinitionForMCPServers(fileInputStream,
                     url, null, dtoWrapper, fileDetail, null, organization, null);
-
-            PublisherCommonUtils.checkGovernanceComplianceAsync(createdApiDTO.getId(), APIMGovernableState.API_CREATE,
-                    ArtifactType.API, organization);
-
             URI createdApiUri = new URI(RestApiConstants.RESOURCE_PATH_MCP_SERVERS + "/" + createdApiDTO.getId());
             return Response.created(createdApiUri).entity(createdApiDTO).build();
         } catch (URISyntaxException e) {
@@ -945,21 +932,8 @@ public class McpServersApiServiceImpl implements McpServersApiService {
                             StringUtils.EMPTY, StringUtils.EMPTY, dtoWrapper);
 
             String organization = RestApiUtil.getValidatedOrganization(messageContext);
-
-            Map<String, String> complianceResult = PublisherCommonUtils.checkGovernanceComplianceSync(null,
-                    APIMGovernableState.API_CREATE, ArtifactType.API, organization, null, null);
-            if (!complianceResult.isEmpty()
-                    && complianceResult.get(APIConstants.GOVERNANCE_COMPLIANCE_KEY) != null
-                    && !Boolean.parseBoolean(complianceResult.get(APIConstants.GOVERNANCE_COMPLIANCE_KEY))) {
-                throw new APIComplianceException(complianceResult.get(APIConstants.GOVERNANCE_COMPLIANCE_ERROR_MESSAGE));
-            }
-
             MCPServerDTO createdApiDTO = RestApiPublisherUtils.importDefinitionForMCPServers(null, url,
                     null, dtoWrapper, null, null, organization, securityInfoDTO);
-
-            PublisherCommonUtils.checkGovernanceComplianceAsync(createdApiDTO.getId(), APIMGovernableState.API_CREATE,
-                    ArtifactType.API, organization);
-
             URI createdApiUri = new URI(RestApiConstants.RESOURCE_PATH_MCP_SERVERS + "/" + createdApiDTO.getId());
             return Response.created(createdApiUri).entity(createdApiDTO).build();
         } catch (URISyntaxException e) {
@@ -1345,22 +1319,9 @@ public class McpServersApiServiceImpl implements McpServersApiService {
             String organization = RestApiUtil.getValidatedOrganization(messageContext);
             OrganizationInfo orgInfo = RestApiUtil.getOrganizationInfo(messageContext);
             populateDefaultValuesForMCPServer(body, APIConstants.API_SUBTYPE_EXISTING_API);
-
-            Map<String, String> complianceResult = PublisherCommonUtils.checkGovernanceComplianceSync(null,
-                    APIMGovernableState.API_CREATE, ArtifactType.API, organization, null, null);
-            if (!complianceResult.isEmpty()
-                    && complianceResult.get(APIConstants.GOVERNANCE_COMPLIANCE_KEY) != null
-                    && !Boolean.parseBoolean(complianceResult.get(APIConstants.GOVERNANCE_COMPLIANCE_KEY))) {
-                throw new APIComplianceException(complianceResult.get(APIConstants.GOVERNANCE_COMPLIANCE_ERROR_MESSAGE));
-            }
-
             API createdApi = PublisherCommonUtils
                     .addAPIWithGeneratedSwaggerDefinition(new APIDTOTypeWrapper(body), openAPIVersion,
                             RestApiCommonUtil.getLoggedInUsername(), organization, orgInfo);
-
-            PublisherCommonUtils.checkGovernanceComplianceAsync(createdApi.getUuid(), APIMGovernableState.API_CREATE,
-                    ArtifactType.API, organization);
-
             createdApiDTO = APIMappingUtil.fromAPItoMCPServerDTO(createdApi);
             createdApiUri = new URI(RestApiConstants.RESOURCE_PATH_MCP_SERVERS + "/" + createdApiDTO.getId());
             return Response.created(createdApiUri).entity(createdApiDTO).build();
@@ -1495,7 +1456,7 @@ public class McpServersApiServiceImpl implements McpServersApiService {
                         ExceptionCodes.from(API_VERSION_ALREADY_EXISTS, newVersion, existingAPI.getId().getApiName()));
             }
 
-            Map<String, String> complianceResult = PublisherCommonUtils.checkGovernanceComplianceSync(null,
+            Map<String, String> complianceResult = PublisherCommonUtils.checkGovernanceComplianceSync(mcpServerId,
                     APIMGovernableState.API_CREATE, ArtifactType.API, organization, null, null);
             if (!complianceResult.isEmpty()
                     && complianceResult.get(APIConstants.GOVERNANCE_COMPLIANCE_KEY) != null
