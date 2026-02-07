@@ -37,6 +37,7 @@ import org.wso2.carbon.apimgt.governance.api.error.APIMGovernanceException;
 import org.wso2.carbon.apimgt.governance.api.model.APIMGovernableState;
 import org.wso2.carbon.apimgt.governance.api.model.ExtendedArtifactType;
 import org.wso2.carbon.apimgt.governance.api.model.RuleType;
+import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.APIManagerFactory;
 import org.wso2.carbon.apimgt.impl.dao.ApiMgtDAO;
 import org.wso2.carbon.apimgt.impl.dao.LabelsDAO;
@@ -46,6 +47,7 @@ import org.wso2.carbon.apimgt.rest.api.publisher.v1.common.mappings.APIDTOTypeWr
 import org.wso2.carbon.apimgt.rest.api.publisher.v1.common.mappings.APIMappingUtil;
 import org.wso2.carbon.apimgt.rest.api.publisher.v1.common.mappings.ExportUtils;
 import org.wso2.carbon.apimgt.rest.api.publisher.v1.dto.APIDTO;
+import org.wso2.carbon.apimgt.rest.api.publisher.v1.dto.MCPServerDTO;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -389,6 +391,9 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
             case "WEBHOOK":
             case "ASYNC":
                 return ExtendedArtifactType.ASYNC_API;
+            case "MCP":
+            case "MCP_SERVER":
+                return ExtendedArtifactType.MCP;
             default:
                 return null;
         }
@@ -416,13 +421,29 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
                 }
 
                 API api = apiProvider.getAPIbyUUID(apiId, organization);
+                if (api == null) {
+                    throw new APIMGovernanceException(APIMGovExceptionCodes.ERROR_WHILE_GETTING_API_INFO, apiId);
+                }
                 api.setUuid(apiId);
                 apiIdentifier.setUuid(apiId);
-                APIDTO apiDtoToReturn = APIMappingUtil.fromAPItoDTO(api, true, apiProvider);
-                File apiProject = ExportUtils.exportAPI(
-                        apiProvider, apiIdentifier, new APIDTOTypeWrapper(apiDtoToReturn), api, userName,
-                        ExportFormat.YAML, true, true, StringUtils.EMPTY, organization, false
-                ); // returns zip file
+                File apiProject;
+                if (APIConstants.API_TYPE_MCP.equalsIgnoreCase(api.getType()) ||
+                        "MCP_SERVER".equalsIgnoreCase(api.getType())) {
+                    MCPServerDTO mcpServerDtoToReturn = APIMappingUtil.fromAPItoMCPServerDTO(api, true,
+                            apiProvider);
+                    apiProject = ExportUtils.exportAPI(
+                            apiProvider, apiIdentifier, new APIDTOTypeWrapper(mcpServerDtoToReturn), api, userName,
+                            ExportFormat.YAML, true, true, StringUtils.EMPTY, organization,
+                            false
+                    ); // returns zip file
+                } else {
+                    APIDTO apiDtoToReturn = APIMappingUtil.fromAPItoDTO(api, true, apiProvider);
+                    apiProject = ExportUtils.exportAPI(
+                            apiProvider, apiIdentifier, new APIDTOTypeWrapper(apiDtoToReturn), api, userName,
+                            ExportFormat.YAML, true, true, StringUtils.EMPTY, organization,
+                            false
+                    ); // returns zip file
+                }
                 return Files.readAllBytes(apiProject.toPath());
             } catch (APIManagementException | APIImportExportException | IOException e) {
                 throw new APIMGovernanceException(APIMGovExceptionCodes.ERROR_WHILE_GETTING_APIM_PROJECT, e,
@@ -478,7 +499,8 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
         try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(apiProjectZip))) {
             ZipEntry entry;
             while ((entry = zipInputStream.getNextEntry()) != null) {
-                if (entry.getName().contains(APIMGovernanceConstants.API_FILE_NAME)) {
+                if (entry.getName().contains(APIMGovernanceConstants.API_FILE_NAME) ||
+                        entry.getName().contains(APIMGovernanceConstants.MCP_FILE_NAME)) {
                     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
                     byte[] buffer = new byte[1024];
                     int length;
@@ -504,14 +526,31 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
      */
     private ExtendedArtifactType getExtendedArtifactTypeFromAPIMetadata(String apiMetadata)
             throws APIMGovernanceException {
+        if (StringUtils.isBlank(apiMetadata)) {
+            return null;
+        }
         ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
         JsonNode rootNode;
         try {
             rootNode = yamlMapper.readTree(apiMetadata);
+            if (rootNode == null || rootNode.isMissingNode()) {
+                return null;
+            }
+            JsonNode topLevelTypeNode = rootNode.path("type");
+            if (!topLevelTypeNode.isMissingNode()) {
+                String topLevelType = topLevelTypeNode.asText();
+                if ("mcp_server".equalsIgnoreCase(topLevelType)) {
+                    return ExtendedArtifactType.MCP;
+                }
+            }
+
             JsonNode dataNode = rootNode.path("data"); // Get the 'data' node
-            if (dataNode != null && dataNode.has("type")) {
-                String type = dataNode.path("type").asText();
-                return getExtendedArtifactTypeFromAPIType(type);
+            if (!dataNode.isMissingNode()) {
+                JsonNode dataTypeNode = dataNode.path("type");
+                if (!dataTypeNode.isMissingNode()) {
+                    String type = dataTypeNode.asText();
+                    return getExtendedArtifactTypeFromAPIType(type);
+                }
             }
         } catch (JsonProcessingException e) {
             throw new APIMGovernanceException(APIMGovExceptionCodes.ERROR_WHILE_GETTING_API_TYPE_FROM_PROJECT, e);
@@ -541,7 +580,9 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
                 if ((entry.getName().contains(swaggerPath)
                         && ExtendedArtifactType.REST_API.equals(extendedArtifactType))
                         || (entry.getName().contains(asyncAPIPath) &&
-                        ExtendedArtifactType.ASYNC_API.equals(extendedArtifactType))) {
+                        ExtendedArtifactType.ASYNC_API.equals(extendedArtifactType))
+                        || (entry.getName().contains(APIMGovernanceConstants.MCP_FILE_NAME) &&
+                        ExtendedArtifactType.MCP.equals(extendedArtifactType))) {
                     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
                     byte[] buffer = new byte[1024];
                     int length;
@@ -568,7 +609,7 @@ public class APIGovernanceHandler implements ArtifactGovernanceHandler {
     public static String extractDocData(byte[] apiProjectZip) throws APIMGovernanceException {
         ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
 
-        String rootFolder = APIMGovernanceConstants.DOCS_FOLDER + File.separator;
+        String rootFolder = APIMGovernanceConstants.DOCS_FOLDER + "/";
         String docMetadataFile = APIMGovernanceConstants.DOC_META_DATA_FILE_NAME;
         List<Object> docsList = new ArrayList<>();
         int count = 0;
