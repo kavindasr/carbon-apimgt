@@ -125,7 +125,8 @@ public class McpMediator extends AbstractMediator implements ManagedLifecycle {
                                     ((Axis2MessageContext) messageContext).getAxis2MessageContext();
 
                             String electedResource =
-                                    (String) messageContext.getProperty(APIMgtGatewayConstants.MCP_API_ELECTED_RESOURCE);
+                                    (String) messageContext.getProperty(APIMgtGatewayConstants
+                                            .MCP_API_ELECTED_RESOURCE_KEY);
                             if (electedResource != null && JsonUtil.hasAJsonPayload(axis2MC)) {
                                 String jsonPayload = JsonUtil.jsonPayloadToString(axis2MC);
 
@@ -154,6 +155,9 @@ public class McpMediator extends AbstractMediator implements ManagedLifecycle {
                         } catch (Exception e) {
                             log.error("Error while modifying payload for server proxy API: " + matchedAPI.getName()
                                     + ":" + matchedAPI.getVersion(), e);
+                            MCPUtils.handleMCPFailure(messageContext,
+                                    new McpResponseDto("Error while modifying MCP tool call payload",
+                                            HttpStatus.SC_INTERNAL_SERVER_ERROR, null));
                             return false;
                         }
                     }
