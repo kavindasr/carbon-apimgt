@@ -134,13 +134,13 @@ public class McpMediator extends AbstractMediator implements ManagedLifecycle {
                                 JsonObject jsonObject = new Gson().fromJson(jsonPayload,
                                         com.google.gson.JsonObject.class);
                                 String originalToolName = null;
-                                if (jsonObject.has("params")) {
-                                    JsonObject params = jsonObject.getAsJsonObject("params");
+                                if (jsonObject.has(APIConstants.MCP.PARAMS_KEY)) {
+                                    JsonObject params = jsonObject.getAsJsonObject(APIConstants.MCP.PARAMS_KEY);
                                     // Capture original tool name before modifying
-                                    if (params.has("name")) {
-                                        originalToolName = params.get("name").getAsString();
+                                    if (params.has(APIConstants.MCP.TOOL_NAME_KEY)) {
+                                        originalToolName = params.get(APIConstants.MCP.TOOL_NAME_KEY).getAsString();
                                     }
-                                    params.addProperty("name", electedResource);
+                                    params.addProperty(APIConstants.MCP.TOOL_NAME_KEY, electedResource);
                                 }
 
                                 // Replace the payload with modified JSON
