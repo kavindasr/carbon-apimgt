@@ -2625,6 +2625,9 @@ paths:
             - apim:mcp_server_create
             - apim:mcp_server_manage
             - apim:mcp_server_create_only
+            - apim:mcp_server_publish
+            - apim:mcp_server_import_export
+            - apim:mcp_server_update
       x-code-samples:
         - lang: Curl
           source: 'curl -k -X POST "https://127.0.0.1:9443/api/am/publisher/v4/mcp-servers/validate-mcp-server" \
@@ -7279,6 +7282,21 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: all
+          in: query
+          description: |
+            Export all APIs and their revisions
+          schema:
+            type: boolean
+            default: false
+        - name: allRevisions
+          in: query
+          description: |
+            Export all revisions of the specified API.
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/requestedTenant'
       responses:
         200:
           description: |
@@ -15024,6 +15042,8 @@ components:
           example: APPROVED
         protocolVersion:
           type: string
+        mcpPathAppended:
+          type: string
         createdTime:
           type: string
         lastUpdatedTimestamp:
@@ -15089,7 +15109,6 @@ components:
           example: false
           default: false
           readOnly: true
-
       x-scopes:
         - apim:mcp_server_create
         - apim:mcp_server_import_export
@@ -15416,7 +15435,7 @@ components:
           type: string
           example: Pizza Shack API Product
         context:
-          maxLength: 60
+          maxLength: 232
           minLength: 1
           type: string
           example: pizzaproduct
@@ -17937,6 +17956,17 @@ components:
           example: https://example.com/mcp
         securityInfo:
           $ref: '#/components/schemas/SecurityInfo'
+        mcpServerId:
+          type: string
+          description: UUID of the MCP Server whose stored endpoint security should be used when securityInfo is absent.
+          example: 2962f50e-1c05-4b5d-a9c7-12345abcdef0
+        endpointType:
+          type: string
+          enum:
+            - PRODUCTION
+            - SANDBOX
+          description: The endpoint environment whose stored security config should be used. Required when mcpServerId is provided.
+          example: PRODUCTION
 
     SecurityInfo:
       title: MCP Server Security Information

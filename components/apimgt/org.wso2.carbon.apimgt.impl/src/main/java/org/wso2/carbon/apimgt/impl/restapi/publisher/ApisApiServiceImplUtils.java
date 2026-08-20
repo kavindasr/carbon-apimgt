@@ -312,8 +312,16 @@ public class ApisApiServiceImplUtils {
         if (log.isDebugEnabled()) {
             log.debug("Using user given stored credentials");
         }
-        if (secretKey.length() == APIConstants.AWS_ENCRYPTED_SECRET_KEY_LENGTH) {
-            CryptoUtil cryptoUtil = CryptoUtil.getDefaultCryptoUtil();
+        CryptoUtil cryptoUtil = CryptoUtil.getDefaultCryptoUtil();
+        boolean isEncryptedSecretKey = false;
+        try {
+            isEncryptedSecretKey = cryptoUtil.base64DecodeAndIsSelfContainedCipherText(secretKey);
+        } catch (CryptoException e) {
+            if (log.isDebugEnabled()) {
+                log.debug("AWS secret key is not a self-contained cipher text; using stored value as-is.", e);
+            }
+        }
+        if (isEncryptedSecretKey) {
             secretKey = new String(cryptoUtil.base64DecodeAndDecrypt(secretKey),
                     StandardCharsets.UTF_8);
         }
@@ -919,7 +927,8 @@ public class ApisApiServiceImplUtils {
                         ExceptionCodes.PARAMETER_NOT_PROVIDED);
             }
 
-            schemaByToolName.put(toolName, inputSchema);
+            schemaByToolName.put(toolName,
+                    MCPInitializerAndToolFetcher.buildToolMetadata(toolJson).toString());
             descriptionByToolName.put(toolName, toolDescription);
         }
     }

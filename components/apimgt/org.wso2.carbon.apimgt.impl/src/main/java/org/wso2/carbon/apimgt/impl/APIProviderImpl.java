@@ -1405,6 +1405,7 @@ class APIProviderImpl extends AbstractAPIManager implements APIProvider {
     private void updateAPI(API api, int tenantId, String username) throws APIManagementException {
 
         MCPUtils.validateMCPResources(api.getUuid(), api.getOrganization(), api.getUriTemplates());
+        MCPUtils.validateMCPBackendOperations(api);
         apiMgtDAO.updateAPI(api, username);
         if (log.isDebugEnabled()) {
             log.debug("Successfully updated the API: " + api.getId() + " metadata in the database");
@@ -1415,9 +1416,17 @@ class APIProviderImpl extends AbstractAPIManager implements APIProvider {
     }
 
     private void updateAPIMetadata(API api) throws APIManagementException {
+        Map<String, String> existingMetadata = apiMgtDAO.getCurrentAPIMetadata(api.getUuid());
+        Map<String, String> merged = existingMetadata != null ? existingMetadata : new HashMap<>();
+        if (api.getMetadata() != null) {
+            merged.putAll(api.getMetadata());
+        }
         apiMgtDAO.deleteCurrentAPIMetadata(api.getUuid());
-        if (api.getMetadata() != null && !api.getMetadata().isEmpty()) {
-            apiMgtDAO.addAPIMetadata(api.getUuid(), api.getMetadata());
+        if (!merged.isEmpty()) {
+            if (log.isDebugEnabled()) {
+                log.debug("Adding merged metadata for API UUID: " + api.getUuid() + ", metadata count: " + merged.size());
+            }  
+            apiMgtDAO.addAPIMetadata(api.getUuid(), merged);
         }
     }
 
@@ -6266,9 +6275,11 @@ class APIProviderImpl extends AbstractAPIManager implements APIProvider {
                     String updatedVerb = updatedUriTemplate.getHTTPVerb();
                     String updatedPath = updatedUriTemplate.getUriTemplate();
 
-                    //Check if existing reused resource is among updated resources
+                    //Check if existing reused resource is among updated resources.
+                    //Resource paths are case-sensitive, hence a change which only alters the letter case of the
+                    //path removes the existing resource. The HTTP verb, however, is case-insensitive.
                     if (existingVerb.equalsIgnoreCase(updatedVerb) &&
-                            existingPath.equalsIgnoreCase(updatedPath)) {
+                            existingPath.equals(updatedPath)) {
                         isReusedResourceRemoved = false;
                         break;
                     }

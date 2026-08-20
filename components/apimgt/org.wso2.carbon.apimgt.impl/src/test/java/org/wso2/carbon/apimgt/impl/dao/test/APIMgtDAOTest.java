@@ -399,6 +399,61 @@ public class APIMgtDAOTest {
     }
 
     @Test
+    public void testGetSubscribedAPIsAndAPIProductsByApplication() throws Exception {
+        Subscriber subscriber = new Subscriber("sub_apiproduct_user");
+        subscriber.setEmail("apiproductuser@wso2.com");
+        subscriber.setSubscribedDate(new Date());
+        subscriber.setTenantId(MultitenantConstants.SUPER_TENANT_ID);
+        apiMgtDAO.addSubscriber(subscriber, null);
+
+        Application application = new Application("APIPRODUCT_SUB_APP", subscriber);
+        int applicationId = apiMgtDAO.addApplication(application, subscriber.getName(), "testOrg");
+        application.setId(applicationId);
+
+        APIIdentifier apiIdentifier = new APIIdentifier("subProductProvider", "SubProductTestAPI", "V1.0.0");
+        API api = new API(apiIdentifier);
+        api.setContext("/subProductTestApi");
+        api.setContextTemplate("/subProductTestApi/{version}");
+        api.setVersionTimestamp(String.valueOf(System.currentTimeMillis()));
+        api.getId().setId(apiMgtDAO.addAPI(api, MultitenantConstants.SUPER_TENANT_ID, "testOrg"));
+        apiMgtDAO.addSubscription(new ApiTypeWrapper(api), application,
+                APIConstants.SubscriptionStatus.UNBLOCKED, subscriber.getName());
+
+        APIProductIdentifier productIdentifier = new APIProductIdentifier("subProductProvider",
+                "SubProductTestProduct", "V1.0.0");
+        APIProduct apiProduct = new APIProduct(productIdentifier);
+        apiProduct.setContext("/subProductTestProduct");
+        apiProduct.setContextTemplate("/subProductTestProduct/{version}");
+        apiProduct.setVersionTimestamp(String.valueOf(System.currentTimeMillis()));
+        apiProduct.setUuid(UUID.randomUUID().toString());
+        apiMgtDAO.addAPIProduct(apiProduct, "testOrg");
+        // addAPIProduct() does not write the generated id back onto the APIProduct (unlike addAPI()), so it must
+        // be looked up explicitly; AM_API_PRODUCT rows live in the same AM_API table keyed by uuid.
+        apiProduct.setProductId(apiMgtDAO.getAPIID(apiProduct.getUuid()));
+        apiMgtDAO.addSubscription(new ApiTypeWrapper(apiProduct), application,
+                APIConstants.SubscriptionStatus.UNBLOCKED, subscriber.getName());
+
+        Set<SubscribedAPI> result = apiMgtDAO.getSubscribedAPIsAndAPIProductsByApplication(application);
+        assertEquals(2, result.size());
+
+        boolean foundApi = false;
+        boolean foundProduct = false;
+        for (SubscribedAPI subscribedAPI : result) {
+            if (subscribedAPI.getAPIIdentifier() != null) {
+                assertEquals("SubProductTestAPI", subscribedAPI.getAPIIdentifier().getApiName());
+                assertNull(subscribedAPI.getProductId());
+                foundApi = true;
+            } else {
+                assertNotNull(subscribedAPI.getProductId());
+                assertEquals("SubProductTestProduct", subscribedAPI.getProductId().getName());
+                foundProduct = true;
+            }
+        }
+        assertTrue("Expected a subscription backed by a plain API", foundApi);
+        assertTrue("Expected a subscription backed by an API Product", foundProduct);
+    }
+
+    @Test
     public void testForwardingBlockedAndProdOnlyBlockedSubscriptionsToNewAPIVersion() throws APIManagementException {
         List<API> oldApiVersionList = new ArrayList<>();
 
@@ -813,6 +868,155 @@ public class APIMgtDAOTest {
         assertTrue(versionList.contains("2.0.0"));
         apiMgtDAO.deleteAPI(api.getUuid());
         apiMgtDAO.deleteAPI(api2.getUuid());
+    }
+
+    /**
+     * Regression coverage for the case-variant API-name front-door check.
+     *
+     * <p>Locks in the Java-side {@link String#equals} filter that decides whether a
+     * row returned by {@code LOWER(API_NAME) = LOWER(?)} counts as a "different case"
+     * match. Any regression that swaps the exclusion to {@code equalsIgnoreCase} or
+     * drops the negation would allow case-variant API names to slip past the front
+     * door on non-CS DB collations — exactly the customer-facing failure mode this
+     * fix addresses.</p>
+     */
+    @Test
+    public void testIsApiNameWithDifferentCaseExist() throws Exception {
+        String apiName = "IsApiNameWithDiffCaseTestApi";
+        String org = "isApiNameWithDiffCaseTestOrg";
+
+        APIIdentifier apiId = new APIIdentifier(apiName, apiName, "1.0.0");
+        API api = new API(apiId);
+        api.setContext("/" + apiName);
+        api.setContextTemplate("/" + apiName + "/{version}");
+        api.setUUID(UUID.randomUUID().toString());
+        api.setVersionTimestamp(String.valueOf(System.currentTimeMillis()));
+        apiMgtDAO.addAPI(api, -1234, org);
+
+        try {
+            // Case-variant name (uppercase input against stored mixed-case) — must return true.
+            assertTrue("case-variant name should be detected",
+                    apiMgtDAO.isApiNameWithDifferentCaseExist(
+                            apiName.toUpperCase(), MultitenantConstants.SUPER_TENANT_DOMAIN_NAME, org));
+
+            // Case-variant name (lowercase input against stored mixed-case) — must return true.
+            assertTrue("case-variant name should be detected",
+                    apiMgtDAO.isApiNameWithDifferentCaseExist(
+                            apiName.toLowerCase(), MultitenantConstants.SUPER_TENANT_DOMAIN_NAME, org));
+
+            // Exact-case match — not a "different case" variant, must return false.
+            assertFalse("exact-case name should NOT be reported as different-case",
+                    apiMgtDAO.isApiNameWithDifferentCaseExist(
+                            apiName, MultitenantConstants.SUPER_TENANT_DOMAIN_NAME, org));
+
+            // Completely different name (no case-insensitive overlap) — must return false.
+            assertFalse("unrelated name should NOT be reported as different-case",
+                    apiMgtDAO.isApiNameWithDifferentCaseExist(
+                            "SomethingCompletelyDifferent", MultitenantConstants.SUPER_TENANT_DOMAIN_NAME, org));
+
+            // Different organization scope — same name in a different org must NOT match.
+            assertFalse("case-variant in a different org should NOT match",
+                    apiMgtDAO.isApiNameWithDifferentCaseExist(
+                            apiName.toUpperCase(), MultitenantConstants.SUPER_TENANT_DOMAIN_NAME,
+                            "aDifferentOrg"));
+        } finally {
+            apiMgtDAO.deleteAPI(api.getUuid());
+        }
+    }
+
+    /**
+     * Regression coverage for the exact-case existence helper used by the create-API
+     * front-door check to distinguish "introducing a new case-variant" from "operating
+     * on an already-registered exact name" independently of DB collation.
+     */
+    @Test
+    public void testIsApiNameExistExactCase() throws Exception {
+        String apiName = "IsApiNameExactCaseTestApi";
+        String org = "isApiNameExactCaseTestOrg";
+
+        APIIdentifier apiId = new APIIdentifier(apiName, apiName, "1.0.0");
+        API api = new API(apiId);
+        api.setContext("/" + apiName);
+        api.setContextTemplate("/" + apiName + "/{version}");
+        api.setUUID(UUID.randomUUID().toString());
+        api.setVersionTimestamp(String.valueOf(System.currentTimeMillis()));
+        apiMgtDAO.addAPI(api, -1234, org);
+
+        try {
+            // Exact-case input matches the stored name -- must return true.
+            assertTrue("exact-case name should be detected",
+                    apiMgtDAO.isApiNameExistExactCase(
+                            apiName, MultitenantConstants.SUPER_TENANT_DOMAIN_NAME, org));
+
+            // Uppercase variant does NOT match the stored mixed-case name -- must return false.
+            assertFalse("case-variant name should NOT be reported as exact-case",
+                    apiMgtDAO.isApiNameExistExactCase(
+                            apiName.toUpperCase(), MultitenantConstants.SUPER_TENANT_DOMAIN_NAME, org));
+
+            // Lowercase variant does NOT match the stored mixed-case name -- must return false.
+            assertFalse("case-variant name should NOT be reported as exact-case",
+                    apiMgtDAO.isApiNameExistExactCase(
+                            apiName.toLowerCase(), MultitenantConstants.SUPER_TENANT_DOMAIN_NAME, org));
+
+            // Completely different name -- must return false.
+            assertFalse("unrelated name should NOT be reported as exact-case",
+                    apiMgtDAO.isApiNameExistExactCase(
+                            "SomethingCompletelyDifferent", MultitenantConstants.SUPER_TENANT_DOMAIN_NAME, org));
+
+            // Different organization scope -- exact match in a different org must NOT be found.
+            assertFalse("exact-case in a different org should NOT match",
+                    apiMgtDAO.isApiNameExistExactCase(
+                            apiName, MultitenantConstants.SUPER_TENANT_DOMAIN_NAME, "aDifferentOrg"));
+        } finally {
+            apiMgtDAO.deleteAPI(api.getUuid());
+        }
+    }
+
+    /**
+     * Covers the tenant-domain branch of {@link ApiMgtDAO#isApiNameExistExactCase(String, String, String)}
+     * which selects {@code GET_API_NAME_DIFF_CASE_MATCHING_CONTEXT_SQL} and binds {@code /t/<tenant>/%}
+     * as the context filter. The super-tenant test above exercises the sibling
+     * {@code GET_API_NAME_DIFF_CASE_NOT_MATCHING_CONTEXT_SQL} branch, so between the two, both SQL
+     * constants added by this fix are exercised.
+     */
+    @Test
+    public void testIsApiNameExistExactCase_TenantDomain() throws Exception {
+        String apiName = "IsApiNameExactCaseTenantApi";
+        String tenantDomain = "isapinameexactcase.test";
+        String org = "isApiNameExactCaseTenantOrg";
+        String tenantPrefixedContext = "/t/" + tenantDomain + "/" + apiName;
+
+        APIIdentifier apiId = new APIIdentifier(apiName, apiName, "1.0.0");
+        API api = new API(apiId);
+        api.setContext(tenantPrefixedContext);
+        api.setContextTemplate(tenantPrefixedContext + "/{version}");
+        api.setUUID(UUID.randomUUID().toString());
+        api.setVersionTimestamp(String.valueOf(System.currentTimeMillis()));
+        apiMgtDAO.addAPI(api, 1, org);
+
+        try {
+            // Exact-case name in this tenant's context prefix -- must return true.
+            assertTrue("exact-case name in tenant scope should be detected",
+                    apiMgtDAO.isApiNameExistExactCase(apiName, tenantDomain, org));
+
+            // Case-variant in same tenant scope -- must return false.
+            assertFalse("case-variant in tenant scope should NOT be reported as exact-case",
+                    apiMgtDAO.isApiNameExistExactCase(apiName.toUpperCase(), tenantDomain, org));
+
+            // Same name but queried under a DIFFERENT tenant domain -- must return false,
+            // because the tenant-branch query filters CONTEXT LIKE '/t/<queried-tenant>/%'
+            // and this row's context is stored under a different tenant prefix.
+            assertFalse("exact-case in a different tenant should NOT match",
+                    apiMgtDAO.isApiNameExistExactCase(apiName, "different.tenant", org));
+
+            // Same name but queried under SUPER tenant -- must return false, because the
+            // super-tenant branch uses CONTEXT NOT LIKE '/t/%' and this row IS under /t/.
+            assertFalse("exact-case in a tenant should NOT match when queried from super tenant",
+                    apiMgtDAO.isApiNameExistExactCase(apiName,
+                            MultitenantConstants.SUPER_TENANT_DOMAIN_NAME, org));
+        } finally {
+            apiMgtDAO.deleteAPI(api.getUuid());
+        }
     }
 
     @Test

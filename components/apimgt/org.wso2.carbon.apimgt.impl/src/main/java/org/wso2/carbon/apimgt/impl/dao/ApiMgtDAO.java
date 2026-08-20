@@ -4723,44 +4723,25 @@ public class ApiMgtDAO {
     public Application[] getAllApplicationsOfTenantForMigration(String appTenantDomain) throws
             APIManagementException {
 
-        Connection connection;
-        PreparedStatement prepStmt = null;
-        ResultSet rs;
-        Application[] applications = null;
         String sqlQuery = SQLConstants.GET_SIMPLE_APPLICATIONS;
-
-        String tenantFilter = "AND SUB.TENANT_ID=?";
-        sqlQuery += tenantFilter;
-        try {
-            connection = APIMgtDBUtil.getConnection();
-
-            int appTenantId = APIUtil.getTenantIdFromTenantDomain(appTenantDomain);
-            prepStmt = connection.prepareStatement(sqlQuery);
+        ArrayList<Application> applicationsList = new ArrayList<Application>();
+        int appTenantId = APIUtil.getTenantIdFromTenantDomain(appTenantDomain);
+        try (Connection connection = APIMgtDBUtil.getConnection();
+             PreparedStatement prepStmt = connection.prepareStatement(sqlQuery)) {
             prepStmt.setInt(1, appTenantId);
-            rs = prepStmt.executeQuery();
-
-            ArrayList<Application> applicationsList = new ArrayList<Application>();
-            Application application;
-            while (rs.next()) {
-                application = new Application(Integer.parseInt(rs.getString("APPLICATION_ID")));
-                application.setName(rs.getString("NAME"));
-                application.setOwner(rs.getString("CREATED_BY"));
-                applicationsList.add(application);
-            }
-            applications = applicationsList.toArray(new Application[applicationsList.size()]);
-        } catch (SQLException e) {
-            handleException("Error when reading the application information from the persistence store.", e);
-        } finally {
-            if (prepStmt != null) {
-                try {
-                    prepStmt.close();
-                } catch (SQLException e) {
-                    log.warn("Database error. Could not close Statement. Continuing with others." +
-                            e.getMessage(), e);
+            try (ResultSet rs = prepStmt.executeQuery()) {
+                while (rs.next()) {
+                    Application application = new Application(Integer.parseInt(rs.getString("APPLICATION_ID")));
+                    application.setName(rs.getString("NAME"));
+                    application.setUUID(rs.getString("UUID"));
+                    application.setOwner(rs.getString("CREATED_BY"));
+                    applicationsList.add(application);
                 }
             }
+        } catch (SQLException e) {
+            handleException("Error when reading the application information from the persistence store.", e);
         }
-        return applications;
+        return applicationsList.toArray(new Application[applicationsList.size()]);
     }
 
     /**
@@ -5707,8 +5688,7 @@ public class ApiMgtDAO {
             boolean initialAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
             ps.setString(1, apiName);
-            ps.setString(2, username);
-            ps.setString(3, organization);
+            ps.setString(2, organization);
             try (ResultSet resultSet = ps.executeQuery()) {
                 while (resultSet.next()) {
                     versionList.add(resultSet.getString("API_VERSION"));
@@ -6492,7 +6472,7 @@ public class ApiMgtDAO {
                     refUriTemplates = getURITemplatesOfAPI(refApiId);
                     if (refUriTemplates == null) {
                         log.error("Failed to retrieve URI templates for referenced API: " + refApiId);
-                        refUriTemplates = new HashSet<>();
+                        refUriTemplates = new LinkedHashSet<>();
                     }
                 }
             }
@@ -11742,40 +11722,77 @@ public class ApiMgtDAO {
     public boolean isApiNameWithDifferentCaseExist(String apiName, String tenantDomain, String organization)
             throws APIManagementException {
 
-        Connection connection = null;
-        PreparedStatement prepStmt = null;
-        ResultSet resultSet = null;
         String contextParam = "/t/";
-
         String query = SQLConstants.GET_API_NAME_DIFF_CASE_NOT_MATCHING_CONTEXT_SQL;
         if (!MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equals(tenantDomain)) {
             query = SQLConstants.GET_API_NAME_DIFF_CASE_MATCHING_CONTEXT_SQL;
             contextParam += tenantDomain + '/';
         }
 
-        try {
-            connection = APIMgtDBUtil.getConnection();
-
-            prepStmt = connection.prepareStatement(query);
+        // The SQL uses LOWER(API_NAME) = LOWER(?) to find rows whose name matches case-
+        // insensitively; the exact-case exclusion is done in Java via String.equals so the
+        // check works correctly on every supported DB collation (previously the SQL
+        // included NOT (API_NAME = ?), which is collation-dependent and became a no-op on
+        // case-insensitive column collations, letting case-variant names slip through).
+        try (Connection connection = APIMgtDBUtil.getConnection();
+             PreparedStatement prepStmt = connection.prepareStatement(query)) {
             prepStmt.setString(1, apiName);
             prepStmt.setString(2, contextParam + '%');
-            prepStmt.setString(3, apiName);
-            prepStmt.setString(4, organization);
-            resultSet = prepStmt.executeQuery();
-
-            int apiCount = 0;
-            if (resultSet != null) {
+            prepStmt.setString(3, organization);
+            try (ResultSet resultSet = prepStmt.executeQuery()) {
                 while (resultSet.next()) {
-                    apiCount = resultSet.getInt("API_COUNT");
+                    String storedName = resultSet.getString("API_NAME");
+                    if (storedName != null && !storedName.equals(apiName)) {
+                        return true;
+                    }
                 }
-            }
-            if (apiCount > 0) {
-                return true;
             }
         } catch (SQLException e) {
             handleException("Failed to check different letter case api name availability : " + apiName, e);
-        } finally {
-            APIMgtDBUtil.closeAllConnections(prepStmt, connection, resultSet);
+        }
+        return false;
+    }
+
+    /**
+     * Check whether an API with the given name in the exact same letter case already exists under the given
+     * tenant. Useful for distinguishing "the caller's name is a new letter-case variant of an existing name"
+     * from "the caller's name matches an existing row exactly" without depending on the database collation.
+     *
+     * @param apiName      candidate api name
+     * @param tenantDomain tenant domain name
+     * @param organization organization identifier
+     * @return true if a row with exact-case matching API_NAME already exists in this tenant/org
+     * @throws APIManagementException If failed to check exact-case api name availability
+     */
+    public boolean isApiNameExistExactCase(String apiName, String tenantDomain, String organization)
+            throws APIManagementException {
+
+        String contextParam = "/t/";
+        String query = SQLConstants.GET_API_NAME_DIFF_CASE_NOT_MATCHING_CONTEXT_SQL;
+        if (!MultitenantConstants.SUPER_TENANT_DOMAIN_NAME.equals(tenantDomain)) {
+            query = SQLConstants.GET_API_NAME_DIFF_CASE_MATCHING_CONTEXT_SQL;
+            contextParam += tenantDomain + '/';
+        }
+
+        // The SQL fetches rows whose name matches case-insensitively; the exact-case
+        // decision is made in Java via String.equals so this check is independent of the
+        // database collation (mirrors isApiNameWithDifferentCaseExist but returns true
+        // for the opposite condition: exact-case match found).
+        try (Connection connection = APIMgtDBUtil.getConnection();
+             PreparedStatement prepStmt = connection.prepareStatement(query)) {
+            prepStmt.setString(1, apiName);
+            prepStmt.setString(2, contextParam + '%');
+            prepStmt.setString(3, organization);
+            try (ResultSet resultSet = prepStmt.executeQuery()) {
+                while (resultSet.next()) {
+                    String storedName = resultSet.getString("API_NAME");
+                    if (storedName != null && storedName.equals(apiName)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            handleException("Failed to check exact-case api name availability : " + apiName, e);
         }
         return false;
     }
@@ -16978,7 +16995,7 @@ public class ApiMgtDAO {
      */
     public Map<String, URITemplate> getURITemplatesForAPI(API api) throws APIManagementException {
 
-        Map<String, URITemplate> templatesMap = new HashMap<String, URITemplate>();
+        Map<String, URITemplate> templatesMap = new LinkedHashMap<String, URITemplate>();
         Connection connection = null;
         PreparedStatement prepStmt = null;
         ResultSet rs = null;
@@ -17271,7 +17288,7 @@ public class ApiMgtDAO {
                         }
                     }
 
-                    Map<String, URITemplate> uriTemplateMap = new HashMap<>();
+                    Map<String, URITemplate> uriTemplateMap = new LinkedHashMap<>();
                     for (URITemplate urlMapping : urlMappingList) {
                         if (urlMapping.getScope() != null) {
                             URITemplate urlMappingNew = urlMapping;
@@ -20402,7 +20419,7 @@ public class ApiMgtDAO {
                     }
                 }
 
-                Map<String, URITemplate> uriTemplateMap = new HashMap<>();
+                Map<String, URITemplate> uriTemplateMap = new LinkedHashMap<>();
                 for (URITemplate urlMapping : urlMappingList) {
                     if (urlMapping.getScope() != null) {
                         URITemplate urlMappingNew = urlMapping;
@@ -21586,7 +21603,7 @@ public class ApiMgtDAO {
                     }
                 }
 
-                Map<String, URITemplate> uriTemplateMap = new HashMap<>();
+                Map<String, URITemplate> uriTemplateMap = new LinkedHashMap<>();
                 for (URITemplate urlMapping : urlMappingList) {
                     if (urlMapping.getScope() != null) {
                         URITemplate urlMappingNew = urlMapping;
@@ -22005,7 +22022,7 @@ public class ApiMgtDAO {
                     }
                 }
 
-                Map<String, URITemplate> uriTemplateMap = new HashMap<>();
+                Map<String, URITemplate> uriTemplateMap = new LinkedHashMap<>();
                 for (URITemplate urlMapping : urlMappingList) {
                     if (urlMapping.getScope() != null) {
                         URITemplate urlMappingNew = urlMapping;
@@ -22294,7 +22311,7 @@ public class ApiMgtDAO {
                 PreparedStatement getURLMappingsFromRevisionedAPIProduct = connection.prepareStatement(
                         GET_API_PRODUCT_REVISION_URL_MAPPINGS_BY_REVISION_UUID);
                 getURLMappingsFromRevisionedAPIProduct.setString(1, apiRevision.getRevisionUUID());
-                Map<String, URITemplate> urlMappingList = new HashMap<>();
+                Map<String, URITemplate> urlMappingList = new LinkedHashMap<>();
                 try (ResultSet rs = getURLMappingsFromRevisionedAPIProduct.executeQuery()) {
                     String key, httpMethod, urlPattern;
                     while (rs.next()) {
@@ -22628,6 +22645,8 @@ public class ApiMgtDAO {
                 removeGraphQLComplexityStatement.setInt(1, apiId);
                 removeGraphQLComplexityStatement.setString(2, apiRevision.getRevisionUUID());
                 removeGraphQLComplexityStatement.executeUpdate();
+                // Removing revision metadata entry from AM_API_REVISION_METADATA table
+                deleteAPIRevisionMetaData(connection, apiRevision.getApiUUID(), apiRevision.getRevisionUUID());
 
                 // Removing related revision entries for operation policies
                 deleteAllAPISpecificOperationPoliciesByAPIUUID(connection, apiRevision.getApiUUID(), apiRevision.getRevisionUUID());
@@ -22968,9 +22987,60 @@ public class ApiMgtDAO {
         return subscribedAPIs;
     }
 
+    /**
+     * Retrieves all the subscriptions of the given application, including both plain API subscriptions and
+     * API Product subscriptions. Each returned {@link SubscribedAPI} is backed by the identifier type matching
+     * its subscription (APIIdentifier or APIProductIdentifier).
+     * <p>
+     * Unlike {@link #getSubscribedAPIsByApplication(Application)}, which filters out API Product subscriptions
+     * for backward compatibility with its existing callers, this method returns the complete set of subscriptions.
+     *
+     * @param application Application for which the subscriptions should be retrieved.
+     * @return a set of {@link SubscribedAPI} containing both API and API Product subscriptions of the application.
+     * @throws APIManagementException if an error occurs while retrieving the subscriptions.
+     */
+    public Set<SubscribedAPI> getSubscribedAPIsAndAPIProductsByApplication(Application application)
+            throws APIManagementException {
+        Set<SubscribedAPI> subscribedAPIs = new LinkedHashSet<>();
+
+        try (Connection connection = APIMgtDBUtil.getConnection();
+             PreparedStatement ps =
+                     connection.prepareStatement(SQLConstants.GET_SUBSCRIBED_APIS_BY_APP_ID_SQL)) {
+            ps.setInt(1, application.getId());
+            try (ResultSet result = ps.executeQuery()) {
+                while (result.next()) {
+                    String apiType = result.getString("TYPE");
+                    SubscribedAPI subscribedAPI;
+                    if (APIConstants.API_PRODUCT.equalsIgnoreCase(apiType)) {
+                        APIProductIdentifier identifier = new APIProductIdentifier(
+                                APIUtil.replaceEmailDomain(result.getString("API_PROVIDER")),
+                                result.getString("API_NAME"), result.getString("API_VERSION"));
+                        identifier.setUuid(result.getString("API_UUID"));
+                        subscribedAPI = new SubscribedAPI(application.getSubscriber(), identifier);
+                    } else {
+                        APIIdentifier identifier = new APIIdentifier(APIUtil.replaceEmailDomain(result.getString
+                                ("API_PROVIDER")), result.getString("API_NAME"),
+                                result.getString("API_VERSION"));
+                        identifier.setUuid(result.getString("API_UUID"));
+                        subscribedAPI = new SubscribedAPI(application.getSubscriber(), identifier);
+                    }
+                    subscribedAPI.setApplication(application);
+                    subscribedAPI.setOrganization(result.getString("ORGANIZATION"));
+                    initSubscribedAPI(subscribedAPI, result);
+                    subscribedAPIs.add(subscribedAPI);
+                }
+            }
+        } catch (SQLException e) {
+            handleException("Failed to get SubscribedAPIs and API Products of application :"
+                    + application.getName(), e);
+        }
+        return subscribedAPIs;
+    }
+
     public Set<SubscribedAPI> getPaginatedSubscribedAPIsByApplication(Application application, Integer offset,
                                                                       Integer limit, String organization)
             throws APIManagementException {
+                
         Set<SubscribedAPI> subscribedAPIs = new LinkedHashSet<>();
 
         try (Connection connection = APIMgtDBUtil.getConnection();
@@ -22981,35 +23051,33 @@ public class ApiMgtDAO {
             try (ResultSet result = ps.executeQuery()) {
                 int index = 0;
                 while (result.next()) {
-                    if (index >= offset && index < (limit + offset)) {
-                        String apiType = result.getString("TYPE");
-
-                        if (APIConstants.API_PRODUCT.equalsIgnoreCase(apiType)) {
-                            APIProductIdentifier identifier = new APIProductIdentifier(
-                                    APIUtil.replaceEmailDomain(result.getString("API_PROVIDER")),
-                                    result.getString("API_NAME"), result.getString("API_VERSION"));
-                            identifier.setUuid(result.getString("API_UUID"));
-                            SubscribedAPI subscribedAPI = new SubscribedAPI(application.getSubscriber(), identifier);
-                            subscribedAPI.setApplication(application);
-                            initSubscribedAPI(subscribedAPI, result);
-                            subscribedAPIs.add(subscribedAPI);
-                        } else {
-                            APIIdentifier identifier = new APIIdentifier(APIUtil.replaceEmailDomain(result.getString
-                                    ("API_PROVIDER")), result.getString("API_NAME"),
-                                    result.getString("API_VERSION"));
-                            identifier.setUuid(result.getString("API_UUID"));
-                            SubscribedAPI subscribedAPI = new SubscribedAPI(application.getSubscriber(), identifier);
-                            subscribedAPI.setApplication(application);
-                            initSubscribedAPI(subscribedAPI, result);
-                            subscribedAPIs.add(subscribedAPI);
-                        }
-
-                        if (index == limit + offset - 1) {
-                            break;
-                        }
+                    if (index++ < offset) {
+                        continue;
                     }
-                    index++;
+                    if (subscribedAPIs.size() >= limit) {
+                        break;
+                    }
+                    String apiType = result.getString("TYPE");
 
+                    if (APIConstants.API_PRODUCT.equalsIgnoreCase(apiType)) {
+                        APIProductIdentifier identifier = new APIProductIdentifier(
+                                APIUtil.replaceEmailDomain(result.getString("API_PROVIDER")),
+                                result.getString("API_NAME"), result.getString("API_VERSION"));
+                        identifier.setUuid(result.getString("API_UUID"));
+                        SubscribedAPI subscribedAPI = new SubscribedAPI(application.getSubscriber(), identifier);
+                        subscribedAPI.setApplication(application);
+                        initSubscribedAPI(subscribedAPI, result);
+                        subscribedAPIs.add(subscribedAPI);
+                    } else {
+                        APIIdentifier identifier = new APIIdentifier(APIUtil.replaceEmailDomain(result.getString
+                                ("API_PROVIDER")), result.getString("API_NAME"),
+                                result.getString("API_VERSION"));
+                        identifier.setUuid(result.getString("API_UUID"));
+                        SubscribedAPI subscribedAPI = new SubscribedAPI(application.getSubscriber(), identifier);
+                        subscribedAPI.setApplication(application);
+                        initSubscribedAPI(subscribedAPI, result);
+                        subscribedAPIs.add(subscribedAPI);
+                    }
                 }
             }
 
@@ -24633,8 +24701,8 @@ public class ApiMgtDAO {
             query = SQLConstants.OperationPolicyConstants.GET_OPERATION_POLICIES_FOR_API_REVISION_SQL;
         }
 
-        Map<String, URITemplate> uriTemplates = new HashMap<>();
-        Set<URITemplate> uriTemplateList = new HashSet<>();
+        Map<String, URITemplate> uriTemplates = new LinkedHashMap<>();
+        Set<URITemplate> uriTemplateList = new LinkedHashSet<>();
         try (Connection connection = APIMgtDBUtil.getConnection();
              PreparedStatement prepStmt = connection.prepareStatement(query)) {
             if (apiRevision == null) {
@@ -25033,6 +25101,18 @@ public class ApiMgtDAO {
             }
             return addAPISpecificOperationPolicy(connection, policyData, apiUUID, revisionUUID, revisionedPolicyId,
                     policyData.getClonedCommonPolicyId());
+        } else if (workingCopyPolicyId != null && workingCopyPolicyId.contains("::")) {
+            // External policy (e.g. from Policy Hub) referenced by a Platform Gateway API is not stored in the
+            // common store. Mirror the working-copy import behaviour (cloneCommonPolicyToAPI) and create a
+            // placeholder API-specific policy so the revision policy mapping stays valid instead
+            if (log.isDebugEnabled()) {
+                log.debug("Creating placeholder revision policy for external policy " + workingCopyPolicyId
+                        + " (API " + apiUUID + ", revision " + revisionUUID + ")");
+            }
+            OperationPolicyData placeholder = createPlaceholderPolicyDataForExternalPolicy(workingCopyPolicyId,
+                    revisionedPolicyId, organization);
+            return addAPISpecificOperationPolicy(connection, placeholder, apiUUID, revisionUUID, revisionedPolicyId,
+                    workingCopyPolicyId);
         } else {
             throw new APIManagementException("Cannot create a revision of policy with ID " + workingCopyPolicyId
                     + " as it does not exists.");
@@ -26477,10 +26557,11 @@ public class ApiMgtDAO {
 
     private String resolvePolicyIdentifier(OperationPolicy policy) throws APIManagementException {
         String policyIdentifier = policy.getPolicyId();
-        if (StringUtils.isBlank(policyIdentifier)) {
+        if (APIConstants.OPERATION_SEQUENCE_TYPE_HUB.equalsIgnoreCase(policy.getDirection())) {
             String policyName = StringUtils.trimToEmpty(policy.getPolicyName());
             if (StringUtils.isBlank(policyName) || "null".equalsIgnoreCase(policyName)) {
-                throw new APIManagementException("Operation policy name cannot be empty when policyId is missing.");
+                throw new APIManagementException("Operation policy name cannot be empty for hub-directed operation " +
+                        "policies.");
             }
             if (log.isDebugEnabled()) {
                 log.debug("Policy ID is blank for policy: " + policyName
@@ -27332,16 +27413,8 @@ public class ApiMgtDAO {
             statement.setString(1, policyMappingUUID);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
-                    OperationPolicy operationPolicy = new OperationPolicy();
-                    operationPolicy.setPolicyName(rs.getString("POLICY_NAME"));
-                    operationPolicy.setPolicyVersion(rs.getString("POLICY_VERSION"));
-                    operationPolicy.setPolicyId(rs.getString("POLICY_UUID"));
-                    operationPolicy.setOrder(rs.getInt("POLICY_ORDER"));
-                    operationPolicy.setDirection(rs.getString("DIRECTION"));
-                    Map<String, Object> parameters =
-                    APIMgtDBUtil.convertJSONStringToMap(rs.getString("PARAMETERS"));
-                    operationPolicy.setParameters(parameters != null ? parameters : new HashMap<>());
-                    gatewayPolicies.add(operationPolicy);
+                    OperationPolicy policy = populateOperationPolicyWithRS(rs);
+                    gatewayPolicies.add(policy);
                 }
             }
         } catch (SQLException e) {
@@ -27682,7 +27755,7 @@ public class ApiMgtDAO {
 
     private void addGatewayPolicyMapping(Connection connection, List<OperationPolicy> gatewayPolicyList,
                                          String policyMappingUUID, String orgId)
-            throws SQLException, APIMgtResourceNotFoundException {
+            throws SQLException, APIMgtResourceNotFoundException, APIManagementException {
 
         try (PreparedStatement preparedStatement = connection.prepareStatement(
                 SQLConstants.GatewayPolicyConstants.ADD_GATEWAY_POLICY_MAPPING)) {
@@ -27703,7 +27776,15 @@ public class ApiMgtDAO {
                     preparedStatement.setString(2, gatewayGlobalPolicy.getPolicyId());
                     preparedStatement.setInt(3, gatewayGlobalPolicy.getOrder());
                     preparedStatement.setString(4, gatewayGlobalPolicy.getDirection());
-                    preparedStatement.setString(5, paramJSON);
+
+                    byte[] paramBytes = paramJSON.getBytes(StandardCharsets.UTF_8);
+                    try (InputStream paramInputStream = new ByteArrayInputStream(paramBytes)) {
+                        preparedStatement.setBinaryStream(5, paramInputStream, paramBytes.length);
+                    } catch (IOException e) {
+                        log.error("Error creating or reading InputStream for Global policy");
+                        throw new APIManagementException("Error processing Global policy parameters for policy ID: " +
+                                gatewayGlobalPolicy.getPolicyId(), e);
+                    }
                     preparedStatement.addBatch();
                 }
             }
