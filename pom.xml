@@ -2077,7 +2077,7 @@
     </dependencyManagement>
 
     <properties>
-        <project.scm.id>scm-server</project.scm.id>
+        <project.scm.id>ksr-scm-server</project.scm.id>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.organization>wso2</sonar.organization>
         <sonar.projectKey>wso2_carbon-apimgt</sonar.projectKey>
