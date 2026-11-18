@@ -3711,6 +3711,10 @@ public class SQLConstants {
         public static final String SELECT_CERTIFICATE_FOR_ALIAS = "SELECT ALIAS FROM AM_API_CLIENT_CERTIFICATE "
                 + "WHERE KEY_TYPE=? AND ALIAS=? AND REMOVED=? AND TENANT_ID =? and REVISION_UUID ='Current API'";
 
+        public static final String SELECT_CERTIFICATE_FOR_ALIAS_IN_REVISIONS = "SELECT ALIAS FROM AM_API_CLIENT_CERTIFICATE "
+                + "WHERE KEY_TYPE=? AND ALIAS=? AND REMOVED=? AND TENANT_ID =? AND REVISION_UUID <> 'Current API' "
+                + "AND API_ID <> (SELECT API_ID FROM AM_API WHERE API_PROVIDER = ? AND API_NAME = ? AND API_VERSION = ? )";
+
         public static final String SELECT_CERTIFICATE_FOR_TENANT =
                 "SELECT AC.CERTIFICATE, AC.ALIAS, AC.TIER_NAME, AA.API_PROVIDER, AA.API_NAME, "
                         + "AA.API_VERSION FROM AM_API_CLIENT_CERTIFICATE AC, AM_API AA WHERE AC.KEY_TYPE=? AND "
@@ -3743,6 +3747,13 @@ public class SQLConstants {
                 "AND API_ID=(SELECT API_ID FROM AM_API WHERE API_PROVIDER = ? AND API_NAME = ? AND API_VERSION = ? )";
 
         public static final String DELETE_CERTIFICATES_WITHOUT_APIID = "UPDATE AM_API_CLIENT_CERTIFICATE SET REMOVED=? "
+                + "WHERE TENANT_ID=? AND ALIAS=? AND KEY_TYPE=? AND REVISION_UUID ='Current API'";
+
+        public static final String HARD_DELETE_CERTIFICATES = "DELETE FROM AM_API_CLIENT_CERTIFICATE "
+                + "WHERE TENANT_ID=? AND REVISION_UUID ='Current API' AND ALIAS=? AND KEY_TYPE=? " +
+                "AND API_ID=(SELECT API_ID FROM AM_API WHERE API_PROVIDER = ? AND API_NAME = ? AND API_VERSION = ? )";
+
+        public static final String HARD_DELETE_CERTIFICATES_WITHOUT_APIID = "DELETE FROM AM_API_CLIENT_CERTIFICATE "
                 + "WHERE TENANT_ID=? AND ALIAS=? AND KEY_TYPE=? AND REVISION_UUID ='Current API'";
 
         public static final String CERTIFICATE_COUNT_QUERY = "SELECT COUNT(*) AS count FROM AM_API_CLIENT_CERTIFICATE " +
@@ -3882,6 +3893,16 @@ public class SQLConstants {
                     + "AUM.API_ID = AM_API.API_ID AND AUM.REVISION_UUID IS NULL";
     public static final String IS_SCOPE_ATTACHED =
             "SELECT 1 FROM AM_API_RESOURCE_SCOPE_MAPPING WHERE SCOPE_NAME = ? AND TENANT_ID = ?";
+
+    /**
+     * Deletes a local scope only if it is not attached to any API resource - neither the current API nor any
+     * revision of it, nor any other API in the tenant - and it is not a shared scope. The checks and the delete are
+     * evaluated as a single statement so that a concurrent attachment cannot slip in between them.
+     */
+    public static final String DELETE_UNUSED_LOCAL_SCOPE =
+            "DELETE FROM AM_SCOPE WHERE NAME = ? AND TENANT_ID = ? AND NOT EXISTS "
+                    + "(SELECT 1 FROM AM_API_RESOURCE_SCOPE_MAPPING WHERE SCOPE_NAME = ? AND TENANT_ID = ?) "
+                    + "AND NOT EXISTS (SELECT 1 FROM AM_SHARED_SCOPE WHERE NAME = ? AND TENANT_ID = ?)";
 
     public static final String REMOVE_RESOURCE_SCOPE_URL_MAPPING_SQL =
             " DELETE FROM AM_API_RESOURCE_SCOPE_MAPPING "

@@ -128,6 +128,8 @@ public enum ExceptionCodes implements ErrorHandler {
     SUB_ORGANIZATION_NOT_IDENTIFIED(900361, "User's Organization Not Identified", 403, "User's Organization is not identified"),
     CANNOT_CREATE_API_VERSION(900362, "New API Version cannot be created from a different provider", 409, "Initial provider of an API must be preserved in all versions of that API"),
     INTERNAL_ERROR_WHILE_UPDATING_API(900363, "Internal Server Error occurred while updating the API", 500, "Internal Server Error. '%s'"),
+    MISSING_ENDPOINT_FOR_GATEWAY_ENV_TYPE(900366, "Missing endpoint for the gateway environment type", 400, "Cannot deploy to gateway environment '%s' " +
+            "because the API does not define a '%s' endpoint, which is required by that environment type"),
     ERROR_WHILE_UPDATING_MANDATORY_PROPERTIES(903010, "Error while updating required properties", 400, "Error while updating required properties."),
     ERROR_WHILE_VALIDATING_MANDATORY_PROPERTIES(903015, "Error while validating required properties", 400, "Error while validating required properties."),
 
@@ -145,6 +147,13 @@ public enum ExceptionCodes implements ErrorHandler {
     RESOURCE_RETRIEVAL_FAILED(900402, "Resource retrieval failed", 400, "Resource retrieval failed"),
     USER_MAPPING_RETRIEVAL_FAILED(900404, "User mapping retrieval failed", 404, "User mapping retrieval failed"),
     MALFORMED_URL(900403, "Malformed URL", 400, "Malformed URL"),
+    UNTRUSTED_URL(900405, "URL could not be resolved", 400,
+            "The provided URL could not be resolved."),
+    UNTRUSTED_URL_IN_DEFINITION(900407, "Remote reference could not be resolved", 400,
+            "A remote reference in the definition could not be resolved."),
+    NETWORK_SECURITY_ACCESS_CONTROL_MISCONFIGURED(900406,
+            "Internal server error. Please contact the system administrator.", 500,
+            "Internal server error. Please contact the system administrator."),
 
     // Endpoint related codes
     ENDPOINT_NOT_FOUND(900450, "Endpoint Not Found", 404, "Endpoint Not Found"),
@@ -668,6 +677,7 @@ public enum ExceptionCodes implements ErrorHandler {
     AI_SERVICE_QUOTA_EXCEEDED(903102, "Quota exceeded for AI service", 429, "Quota exceeded for AI service"),
     AI_SERVICE_PROVIDER_NOT_FOUND(903103,"AI Service Provider Not found for %s in organization" ,404 ,"AI Service Provider Not found for %s in organization" ,false ),
     AI_SERVICE_PROVIDER_INVALID_METADATA_IDENTIFIER(903104, "Invalid metadata identifier", 400, "%s"),
+    INVALID_AI_API_CONFIGURATION(903105, "Invalid AI configuration", 400, "Invalid AI configuration. %s", false),
 
     DOCUMENT_NAME_ILLEGAL_CHARACTERS(902016, "Document name cannot contain illegal characters", 400, "Document name contains one or more illegal characters"),
 
